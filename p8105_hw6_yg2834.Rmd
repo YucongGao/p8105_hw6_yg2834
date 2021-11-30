@@ -193,3 +193,76 @@ bind_rows(m1_cv_df, m2_cv_df, m3_cv_df) %>%
 ```
 
 
+## Problem 2
+
+load data
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+bootstrap
+```{r}
+weather_strap_df = 
+  weather_df %>% 
+  bootstrap(n = 5000, id = "strap_number") %>% 
+  mutate(models = map(strap, ~lm(tmax ~ tmin, data = .x)), 
+         results = map(models, broom::tidy))
+
+
+
+```
+
+
+Adjusted R squared
+```{r}
+
+adj_r2_df = 
+  weather_strap_df %>% 
+  select(strap_number, models) %>% 
+  mutate(res_summary = map(models, broom::glance)) %>% 
+  select(strap_number, res_summary) %>% 
+  unnest(res_summary) %>% 
+  select(strap_number, adj.r.squared)
+
+adj_r2_df %>% 
+  ggplot(aes(x = adj.r.squared)) + 
+  geom_density()
+
+quantile(adj_r2_df %>% pull(adj.r.squared), prob = c(0.025, 0.975))
+```
+After using bootstraping, the adjusted R-squared values are normally distributed with a mean around 0.91. And a 95% confidence interval for adjusted R-square is (0.893, 0.927)
+
+
+
+
+log(beta0_hat * beta1_hat)
+```{r}
+log_df = 
+  weather_strap_df %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  select(strap_number, term, estimate) %>% 
+  pivot_wider(names_from = term, 
+              values_from = estimate) %>% 
+  janitor::clean_names() %>% 
+  mutate(log = log(intercept * tmin))
+
+log_df %>% 
+  ggplot(aes(x = log)) + 
+  geom_density() +
+  labs(x = "log(beta0_hat * beta1_hat)")
+
+quantile(log_df %>% pull(log), prob = c(0.025, 0.975))
+```
+After using bootstraping, values of log(beta0_hat * beta1_hat) are normally distributed with a mean around 2.02. And its 95% confidence interval is (1.966, 2.06)
+
