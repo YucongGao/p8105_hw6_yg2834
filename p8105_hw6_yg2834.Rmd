@@ -1,0 +1,195 @@
+---
+title: "p8105_hw6_yg2834"
+author: "Yucong Gao"
+date: "11/28/2021"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(GGally)
+library(modelr)
+
+
+set.seed(1)
+```
+
+## Probelm 1
+
+### Load and clean data
+
+Handle factor variables 
+```{r}
+bwt = read.csv("./data/birthweight.csv")
+bwt_df = 
+  bwt %>%  
+  mutate(babysex = ifelse(as.numeric(babysex) == 1, "male", "female"), 
+         babysex = fct_relevel(babysex, c("male", "female")), 
+         frace = case_when(as.numeric(frace) == 1 ~ "White", 
+                           as.numeric(frace) == 2 ~ "Black",
+                           as.numeric(frace) == 3 ~ "Asian",
+                           as.numeric(frace) == 4 ~ "Puerto Rican",
+                           as.numeric(frace) == 8 ~ "Other", 
+                           TRUE ~ "Unknown"), 
+         frace = fct_relevel(frace, c("White", "Black", "Asian", "Puerto Rican", "Other")), 
+         mrace = case_when(as.numeric(mrace) == 1 ~ "White", 
+                           as.numeric(mrace) == 2 ~ "Black",
+                           as.numeric(mrace) == 3 ~ "Asian",
+                           as.numeric(mrace) == 4 ~ "Puerto Rican",
+                           as.numeric(mrace) == 8 ~ "Other", 
+                           TRUE ~ "Unknown"), 
+         mrace = fct_relevel(mrace, c("White", "Black", "Asian", "Puerto Rican")), 
+         malform = ifelse(as.numeric(malform) == 1, "present", "absent"), 
+         malform = fct_relevel(malform, c("absent", "present"))
+         )
+
+```
+
+
+Check missing values
+
+It is impossible for family monthly income and mother's age at menarche to be 0. Therefore, I consider them to be invalid value and decide to drop these observations
+```{r}
+bwt_df %>% 
+  filter(bhead == 0 | blength == 0 | bwt == 0 | delwt == 0 | fincome == 0 | 
+           gaweeks == 0 | menarche == 0 | mheight == 0 | momage == 0 | ppbmi == 0 | 
+           ppwt == 0 )
+
+bwt_df = 
+  bwt_df %>% 
+  filter(fincome != 0, 
+         menarche != 0)
+```
+
+### Select variables for regression
+
+For variables of pnumlbw and pnumgsa, there is only one level, 0 for observation values, and for variable of parity, there were only three non-observations, it is not meaningful to include these variables into the regression model. 
+```{r}
+bwt_df %>% 
+  filter(pnumlbw != 0)
+
+bwt_df %>% 
+  filter(pnumsga != 0)
+
+bwt_df %>% 
+  filter(parity != 0)
+```
+
+
+Visualize the relationships between birth weight and some categorical variables
+
+the birth weight distributions are different across sex, race and malform subgroups, and as father's race are highly correlated with mother's race, so I decide to keep categorical variables of sex, mother's race and malform. 
+```{r}
+bwt_df %>% 
+  ggplot(aes(x = babysex, y = bwt)) +
+  geom_boxplot()
+
+bwt_df %>% 
+  mutate(frace = fct_reorder(frace, bwt)) %>% 
+  ggplot(aes(x = frace, y = bwt)) +
+  geom_boxplot()
+
+bwt_df %>% 
+  mutate(mrace = fct_reorder(mrace, bwt)) %>% 
+  ggplot(aes(x = mrace, y = bwt)) +
+  geom_boxplot()
+
+bwt_df  %>% 
+  ggplot(aes(x = malform, y = bwt)) +
+  geom_boxplot()
+
+
+```
+
+Visualize the correlation between birth weight and some continuous variables
+```{r}
+cor_df = 
+  bwt_df %>% 
+  select(bhead, blength, delwt, fincome, gaweeks, 
+         menarche, mheight, momage, ppbmi, ppwt, smoken, wtgain, bwt) %>% 
+  relocate(bwt)
+
+ggpairs(cor_df, lower = list(continuous = wrap("points", size = 0.01)), 
+        upper = list(continuous = wrap("cor", size = 2.5))) + 
+  theme(axis.text.x = element_text(size = 6, angle = 45),
+          axis.text.y = element_text(size = 6, angle = 45))
+```
+
+According to this correlation matrix, ppbmi and ppwt are highly correlated with correlation coefficient equals 0.853. Ppwt and deliverwt are also highly correlated with correlation coefficient equals 0.871. Since all the above variables indicate weight of the mothers, I choose to keep **ppbmi** and **wtgain** in the model
+
+In addition, baby's head circumference, baby's length at birth, family monthly income, gestational age in weeks, mother's height and mom's age may positively influence baby's birth weight. For that babies with bigger head circumference and bigger length are likely heavier. Higher family income is associated with better nutrition for mother, which can result in bigger baby. Longer gestational age and younger mom are also associated with healthier baby. On the other hand, smoking during pregnancy may harm baby's health, thus result in lower weight. 
+
+Therefore, for the regression model, sex, mrace, malform, ppbmi, wtgain, bhead, blength, fincome, gaweeks, mheight, momage and smoken are included
+
+### Regression model
+
+```{r}
+  lm(bwt ~ babysex + mrace + malform + ppbmi + wtgain + bhead + blength + fincome + gaweeks + mheight + momage + smoken, data = bwt_df) %>% 
+  broom::tidy()
+
+```
+
+From this model, we can conclude that presence malformation, family income and mother's age do not have significance on baby's weight, so i decide to drop these three variables and fit the model again
+
+```{r}
+bwt_to_fit = bwt_df %>% select(bwt, babysex, mrace, ppbmi, wtgain, bhead, blength, gaweeks, mheight, smoken)
+bwt_model = lm(bwt ~ babysex + mrace + ppbmi + wtgain + bhead + blength  + gaweeks + mheight + smoken, data = bwt_to_fit)
+
+bwt_model %>% broom::tidy()
+
+```
+
+### Residuals
+```{r}
+bwt_to_fit = 
+  bwt_to_fit %>% 
+  modelr::add_predictions(bwt_model) %>% 
+  modelr::add_residuals(bwt_model) 
+
+
+bwt_to_fit %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+  geom_point(alpha = .3, size = 1)
+```
+
+### Model Comparison
+```{r}
+m1_df = bwt_df %>% select(bwt, blength, gaweeks)
+m1_cv_df = crossv_mc(m1_df, 100)
+m1_cv_df = 
+  m1_cv_df %>% 
+  mutate(train = map(train, as.tibble), 
+         test = map(test, as.tibble)) %>% 
+  mutate(model = map(train, ~ lm(bwt ~ blength + gaweeks, data = .x))) %>% 
+  mutate(rmse = map2_dbl(model, test, ~rmse(model = .x, data = .y)), 
+         which = "model1")
+
+
+m2_df = bwt_df %>% select(bwt, bhead, blength, babysex)
+m2_cv_df = crossv_mc(m2_df, 100)
+m2_cv_df = 
+  m2_cv_df %>% 
+  mutate(train = map(train, as.tibble), 
+         test = map(test, as.tibble)) %>% 
+  mutate(model = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead * blength + bhead * babysex + blength * babysex, data = .x))) %>% 
+  mutate(rmse = map2_dbl(model, test, ~rmse(model = .x, data = .y)), 
+         which = "model2")
+
+m3_df = bwt_to_fit
+m3_cv_df = crossv_mc(m3_df, 100)
+m3_cv_df = 
+  m3_cv_df %>% 
+  mutate(train = map(train, as.tibble), 
+         test = map(test, as.tibble)) %>% 
+  mutate(model = map(train, ~lm(bwt ~ babysex + mrace + ppbmi + wtgain + bhead + blength  + gaweeks + mheight + smoken, data = .x))) %>% 
+  mutate(rmse = map2_dbl(model, test, ~rmse(model = .x, data = .y)), 
+         which = "model3")
+
+bind_rows(m1_cv_df, m2_cv_df, m3_cv_df) %>% 
+  ggplot(aes(x = which, y = rmse)) + 
+  geom_boxplot() + 
+  scale_x_discrete(labels = c("Main Effects", "Interactions", "My Model"))
+
+```
+
+
