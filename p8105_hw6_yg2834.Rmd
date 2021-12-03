@@ -149,7 +149,9 @@ bwt_to_fit =
 
 bwt_to_fit %>% 
   ggplot(aes(x = pred, y = resid)) + 
-  geom_point(alpha = .3, size = 1)
+  geom_point(alpha = .3, size = 1) + 
+  labs(x = "Prediction", 
+       y = "Residual")
 ```
 
 ### Model Comparison
@@ -188,6 +190,7 @@ m3_cv_df =
 bind_rows(m1_cv_df, m2_cv_df, m3_cv_df) %>% 
   ggplot(aes(x = which, y = rmse)) + 
   geom_boxplot() + 
+  labs(x = "Model") + 
   scale_x_discrete(labels = c("Main Effects", "Interactions", "My Model"))
 
 ```
